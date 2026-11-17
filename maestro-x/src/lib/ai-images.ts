@@ -1,0 +1,17 @@
+import type Anthropic from "@anthropic-ai/sdk";
+
+export const MAX_IMAGES = 4;
+
+type ImageMedia = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+
+export function toImageBlocks(images: unknown): Anthropic.ImageBlockParam[] | null {
+  const list = (Array.isArray(images) ? images : images ? [images] : []).slice(0, MAX_IMAGES);
+  const out: Anthropic.ImageBlockParam[] = [];
+  for (const img of list) {
+    const m = typeof img === "string" ? img.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/) : null;
+    if (!m) return null;
+    out.push({ type: "image", source: { type: "base64", media_type: m[1] as ImageMedia, data: m[2] } });
+  }
+  return out;
+}
+
