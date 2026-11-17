@@ -1,0 +1,66 @@
+# Cloud builds for the App Store and Google Play — no Mac needed.
+# 1) Sign up at codemagic.io with GitHub and add this repo (root: maestro-x).
+# 2) In Codemagic > Team integrations: connect "App Store Connect" (API key) and name it MAESTRO_ASC.
+# 3) In Codemagic > Code signing identities: upload/generate the Android keystore, reference "maestro_keystore".
+workflows:
+  ios-release:
+    name: iOS → TestFlight
+    working_directory: maestro-x
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: MAESTRO_ASC
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.mannyxgoat.maestrox
+      node: 22
+      xcode: latest
+    scripts:
+      - name: Install
+        script: npm ci
+      - name: Sync Capacitor
+        script: npx cap sync ios
+      - name: Set up signing
+        script: xcode-project use-profiles
+      - name: Build number
+        script: |
+          cd ios/App
+          agvtool new-version -all $(($BUILD_NUMBER + 1))
+      - name: Build IPA
+        script: xcode-project build-ipa --project "ios/App/App.xcodeproj" --scheme "App"
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+
+  android-release:
+    name: Android → Play Console (internal testing)
+    working_directory: maestro-x
+    max_build_duration: 45
+    instance_type: linux_x2
+    environment:
+      android_signing:
+        - maestro_keystore
+      groups:
+        - google_play   # contains GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+      node: 22
+      java: 21
+    scripts:
+      - name: Install
+        script: npm ci
+      - name: Sync Capacitor
+        script: npx cap sync android
+      - name: Build AAB
+        script: |
+          cd android
+          ./gradlew bundleRelease -PversionCode=$BUILD_NUMBER
+    artifacts:
+      - android/app/build/outputs/**/*.aab
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true

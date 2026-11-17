@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
+import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { LANGUAGES, detectLang, emergencyNumber, getLang, t } from "@/lib/i18n";
 import type { Diagnosis } from "./api/diagnose/route";
 
@@ -56,6 +58,8 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const recRef = useRef<SR | null>(null);
+  const nativeHeard = useRef("");
+  const nativeHandles = useRef<PluginListenerHandle[]>([]);
 
   const L = getLang(lang);
   const tr = (k: Parameters<typeof t>[1], v?: Record<string, string>) => t(lang, k, v);
@@ -89,7 +93,40 @@ export default function Home() {
     e.target.value = "";
   }
 
+  // Inside the iPhone/Android app: use the phone's native speech recognition
+  async function finishNativeVoice() {
+    const said = nativeHeard.current.trim();
+    nativeHeard.current = "";
+    for (const h of nativeHandles.current) await h.remove();
+    nativeHandles.current = [];
+    if (said) setText((prev) => (prev ? prev + " " : "") + said);
+    setListening(false);
+  }
+
+  async function toggleNativeVoice() {
+    if (listening) {
+      try { await SpeechRecognition.stop(); } catch {}
+      await finishNativeVoice();
+      return;
+    }
+    try {
+      const perm = await SpeechRecognition.requestPermissions();
+      if (perm.speechRecognition !== "granted") { setError(tr("errorMsg")); return; }
+      nativeHeard.current = "";
+      nativeHandles.current = [
+        await SpeechRecognition.addListener("partialResults", (d) => { nativeHeard.current = d.matches?.[0] ?? nativeHeard.current; }),
+        await SpeechRecognition.addListener("listeningState", (d) => { if (d.status === "stopped") void finishNativeVoice(); }),
+      ];
+      setListening(true);
+      await SpeechRecognition.start({ language: L.speech, maxResults: 1, partialResults: true, popup: false });
+    } catch {
+      await finishNativeVoice();
+      setError(tr("errorMsg"));
+    }
+  }
+
   function toggleVoice() {
+    if (Capacitor.isNativePlatform()) { void toggleNativeVoice(); return; }
     const W = window as unknown as { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR };
     const Ctor = W.SpeechRecognition ?? W.webkitSpeechRecognition;
     if (!Ctor) { setError("Voice input isn't supported in this browser. Try Chrome or Safari."); return; }
@@ -147,7 +184,7 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-xl flex-1 px-4 pb-16 pt-6">
+    <main className="mx-auto w-full max-w-xl flex-1 px-4 pb-16 pt-[max(1.5rem,env(safe-area-inset-top))] md:max-w-3xl md:px-8 md:pt-10 lg:max-w-4xl">
       <header className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h1><Logo /></h1>
@@ -184,6 +221,7 @@ export default function Home() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={4}
+            style={{ minHeight: "7rem" }}
             placeholder={tr("placeholder")}
             className="w-full resize-none rounded-xl border border-white/15 bg-ink p-3 text-base text-white outline-none placeholder:text-muted focus:border-brand"
           />
@@ -238,10 +276,12 @@ export default function Home() {
             )}
           </div>
 
-          <Card title={`⚠️ ${tr("safety")}`} items={result.safety} />
-          <Card title={tr("steps")} items={result.steps} ordered />
-          <Card title={`🧰 ${tr("tools")}`} items={result.tools} />
-          <Card title={`👷 ${tr("callPro")}`} items={result.call_pro_if} />
+          <div className="grid gap-4 md:grid-flow-dense md:grid-cols-2 md:items-start">
+            <Card className="md:col-start-1" title={`⚠️ ${tr("safety")}`} items={result.safety} />
+            <Card className="md:col-start-2 md:row-span-3 md:row-start-1" title={tr("steps")} items={result.steps} ordered />
+            <Card className="md:col-start-1" title={`🧰 ${tr("tools")}`} items={result.tools} />
+            <Card className="md:col-start-1" title={`👷 ${tr("callPro")}`} items={result.call_pro_if} />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <button onClick={() => readAloud(result)} className="rounded-xl border border-white/15 bg-panel py-3 font-semibold">
@@ -284,11 +324,11 @@ export default function Home() {
   );
 }
 
-function Card({ title, items, ordered }: { title: string; items: string[]; ordered?: boolean }) {
+function Card({ title, items, ordered, className = "" }: { title: string; items: string[]; ordered?: boolean; className?: string }) {
   if (!items?.length) return null;
   const List = ordered ? "ol" : "ul";
   return (
-    <div className="rounded-2xl border border-white/10 bg-panel p-4">
+    <div className={`rounded-2xl border border-white/10 bg-panel p-4 ${className}`}>
       <h3 className="mb-2 font-extrabold">{title}</h3>
       <List className={`space-y-1.5 ps-5 text-white/90 ${ordered ? "list-decimal marker:font-bold marker:text-brand-hi" : "list-disc marker:text-brand"}`}>
         {items.map((s, i) => <li key={i}>{s}</li>)}
