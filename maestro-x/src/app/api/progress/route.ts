@@ -48,6 +48,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ looks_good: !!out.looks_good, guidance: out.guidance ?? "" });
   } catch (e) {
     console.error("progress failed", e);
-    return NextResponse.json({ error: "ai_failed" }, { status: 502 });
+    return NextResponse.json({ error: "ai_failed", detail: e instanceof Error ? e.message.slice(0, 300) : "unknown" }, { status: 502 });
   }
 }

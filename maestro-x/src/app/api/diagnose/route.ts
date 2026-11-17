@@ -123,6 +123,6 @@ export async function POST(req: Request) {
     return NextResponse.json(normalize(block.input as Partial<Diagnosis>));
   } catch (e) {
     console.error("diagnose failed", e);
-    return NextResponse.json({ error: "ai_failed" }, { status: 502 });
+    return NextResponse.json({ error: "ai_failed", detail: e instanceof Error ? e.message.slice(0, 300) : "unknown" }, { status: 502 });
   }
 }
