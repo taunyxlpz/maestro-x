@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { normalize, type Diagnosis } from "@/lib/diagnosis";
-import { toImageBlocks } from "@/lib/ai-images";
+import { extractToolInput, toImageBlocks } from "@/lib/ai-images";
 
 export const maxDuration = 60;
 
@@ -30,7 +30,9 @@ DETAILS:
 - alternatives: 1-2 other likely causes ("it could also be") for self_service/professional; empty for emergency.
 - time_estimate like "20-30 min", cost_estimate like "$10-25" (empty for emergency).
 - pro_search: the trade to search on Google Maps in English, e.g. "plumber", "electrician", "appliance repair", "HVAC repair", "handyman".
-- confidence reflects how sure you are from the photos/description. Never invent details you can't see.`;
+- confidence reflects how sure you are from the photos/description. Never invent details you can't see.
+
+ALWAYS answer by calling the "diagnosis" tool exactly once. Do not write anything else.`;
 
 const TOOL: Anthropic.Tool = {
   name: "diagnosis",
@@ -115,12 +117,10 @@ export async function POST(req: Request) {
       max_tokens: 3000,
       system: SYSTEM,
       tools: [TOOL],
-      tool_choice: { type: "tool", name: "diagnosis" },
+      tool_choice: { type: "auto" },
       messages: [{ role: "user", content }],
     });
-    const block = msg.content.find((b) => b.type === "tool_use");
-    if (!block || block.type !== "tool_use") throw new Error("no tool_use");
-    return NextResponse.json(normalize(block.input as Partial<Diagnosis>));
+    return NextResponse.json(normalize(extractToolInput(msg, "diagnosis") as Partial<Diagnosis>));
   } catch (e) {
     console.error("diagnose failed", e);
     return NextResponse.json({ error: "ai_failed", detail: e instanceof Error ? e.message.slice(0, 300) : "unknown" }, { status: 502 });

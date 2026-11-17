@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { toImageBlocks } from "@/lib/ai-images";
+import { extractToolInput, toImageBlocks } from "@/lib/ai-images";
 
 export const maxDuration = 60;
 
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const msg = await client.messages.create({
       model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5",
       max_tokens: 600,
-      system: `You are Maestro X, a friendly, experienced handyman. The user is stuck on one repair step and sent a progress photo. Look closely and give short, specific, encouraging guidance (2-4 sentences) for this step, in ${langName}, informal (Spanish "tú"). Flag anything unsafe FIRST and tell them to stop if it's dangerous. If the photo is unclear, ask for a closer, better-lit shot.`,
+      system: `You are Maestro X, a friendly, experienced handyman. The user is stuck on one repair step and sent a progress photo. Look closely and give short, specific, encouraging guidance (2-4 sentences) for this step, in ${langName}, informal (Spanish "tú"). Flag anything unsafe FIRST and tell them to stop if it's dangerous. If the photo is unclear, ask for a closer, better-lit shot. ALWAYS answer by calling the "progress" tool exactly once.`,
       tools: [
         {
           name: "progress",
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
           },
         },
       ],
-      tool_choice: { type: "tool", name: "progress" },
+      tool_choice: { type: "auto" },
       messages: [
         {
           role: "user",
@@ -42,9 +42,7 @@ export async function POST(req: Request) {
         },
       ],
     });
-    const block = msg.content.find((b) => b.type === "tool_use");
-    if (!block || block.type !== "tool_use") throw new Error("no tool_use");
-    const out = block.input as { looks_good?: boolean; guidance?: string };
+    const out = extractToolInput(msg, "progress") as { looks_good?: boolean; guidance?: string };
     return NextResponse.json({ looks_good: !!out.looks_good, guidance: out.guidance ?? "" });
   } catch (e) {
     console.error("progress failed", e);

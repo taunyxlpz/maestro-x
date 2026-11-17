@@ -15,3 +15,14 @@ export function toImageBlocks(images: unknown): Anthropic.ImageBlockParam[] | nu
   return out;
 }
 
+
+/** Pull the structured result out of a reply: the tool call if the model made one, otherwise JSON in the text. */
+export function extractToolInput(msg: Anthropic.Message, tool: string): unknown {
+  const call = msg.content.find((b) => b.type === "tool_use" && b.name === tool);
+  if (call && call.type === "tool_use") return call.input;
+  const raw = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  const i = raw.indexOf("{");
+  const j = raw.lastIndexOf("}");
+  if (i < 0 || j <= i) throw new Error("no structured output");
+  return JSON.parse(raw.slice(i, j + 1));
+}
